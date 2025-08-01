@@ -1,0 +1,22 @@
+/* static/style.css */
+body {
+    font-family: Arial, sans-serif;
+    max-width: 600px;
+    margin: 20px auto;
+}
+#chat {
+    border: 1px solid #ccc;
+    height: 400px;
+    overflow-y: auto;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+.message {
+    margin-bottom: 10px;
+}
+.message.user {
+    color: blue;
+}
+.message.bot {
+    color: green;
+}

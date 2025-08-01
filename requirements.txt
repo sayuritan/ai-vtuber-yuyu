@@ -1,0 +1,4 @@
+httpx
+TTS
+playsound
+tk
