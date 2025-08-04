@@ -1,52 +1,78 @@
 import asyncio
-import subprocess
-from stt import listen_audio       # ฟังเสียงแล้วแปลงเป็นข้อความ (ในตัวอย่างคือรับข้อความ input)
-from chatbot import ask_ollama     # ส่งข้อความไป AI แล้วรอคำตอบ
-from text_to_speech import speak_japanese  # แปลงข้อความเป็นไฟล์เสียง
-
-# ฟังก์ชันรัน so-vits-svc แปลงเสียง (ต้องแก้ path ให้ตรงกับของคุณ)
-async def convert_voice(input_wav: str, output_wav: str):
-    process = await asyncio.create_subprocess_exec(
-        "python", "so-vits-svc-fork-main/inference.py",
-        "--input", input_wav,
-        "--output", output_wav,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, stderr = await process.communicate()
-    if process.returncode != 0:
-        print("Error in voice conversion:", stderr.decode())
-        return None
-    return output_wav
+from stt import listen_audio
+from chatbot import ask_ollama
+from text_to_speech import speak
+from utils import clean_response, is_valid_reply, clean_reply, save_conversation
+from translate import translate_to_th, translate_to_en
 
 async def main():
-    print("AI VTuber เริ่มต้นแล้ว พูดหรือพิมพ์ exit เพื่อออก")
+    print("✨ Yuyu AI VTuber พร้อมใช้งานแล้ว ✨")
+    print("🎤 พูดภาษาไทยกับยูยุได้เลย...")
 
-    while True:
-        print("กำลังฟังเสียง...")
-        user_text = await listen_audio()  # รับข้อความจากเสียงหรือ input
-        if user_text.lower() in ["exit", "quit"]:
-            print("ออกจากโปรแกรมแล้ว")
-            break
+    try:
+        while True:
+            print("\n🎧 กำลังฟัง...")
+            try:
+                user_input_th = await listen_audio()
+            except Exception as e:
+                print(f"❌ เกิดข้อผิดพลาดขณะฟังเสียง: {e}")
+                continue
 
-        print(f"คุณพูดว่า: {user_text}")
-        ai_response = await ask_ollama(user_text)
-        print(f"VTuber ตอบ: {ai_response}")
+            if not user_input_th or len(user_input_th.strip()) < 1:
+                print("❌ ไม่ได้รับเสียงหรือไม่เข้าใจ กรุณาพูดใหม่อีกครั้ง")
+                continue
 
-        # แปลงข้อความเป็นไฟล์เสียง
-        output_wav = speak_japanese(ai_response)
-        print(f"สร้างไฟล์เสียงที่: {output_wav}")
+            if any(word in user_input_th.lower() for word in ["หยุด", "เลิก", "ออก", "bye", "exit"]):
+                print("👋 ขอบคุณที่ใช้บริการ Yuyu AI VTuber ลาก่อนค่ะ!")
+                break
 
-        # กำหนดไฟล์เสียง input สำหรับแปลงเสียง VTuber
-        input_wav = output_wav
-        converted_wav = "responses/converted.wav"
+            user_input_en = translate_to_en(user_input_th)
+            if not user_input_en:
+                print("❌ แปลภาษาอังกฤษไม่สำเร็จ กรุณาพูดใหม่อีกครั้ง")
+                continue
 
-        # แปลงเสียงด้วย so-vits-svc
-        converted_file = await convert_voice(input_wav, converted_wav)
-        if converted_file:
-            print(f"เล่นไฟล์เสียงแปลงเสียง: {converted_file}")
-            # เปิดเล่นไฟล์เสียงที่แปลงแล้ว (Windows)
-            subprocess.Popen(["start", converted_file], shell=True)
+            prompt = (
+                "You are Yuyu, a cute and polite anime VTuber girl. "
+                "Always respond briefly, in a kind and moe style.\n"
+                f"User: {user_input_en}\n"
+                "Yuyu:"
+            )
+
+            try:
+                raw_response = await ask_ollama(prompt)
+                if not raw_response:
+                    print("❌ Ollama ไม่ตอบกลับ กรุณาพูดใหม่อีกครั้ง")
+                    continue
+            except Exception as e:
+                print(f"❌ เกิดข้อผิดพลาดจาก Ollama: {e}")
+                continue
+
+            cleaned = clean_response(raw_response)
+
+            if is_valid_reply(cleaned):
+                final_en = clean_reply(cleaned)
+            else:
+                final_en = "I'm a bit confused~ Can you say it another way?"
+
+            final_th = translate_to_th(final_en)
+            if not final_th:
+                final_th = "ขอโทษค่ะ ฉันยังไม่เข้าใจ ลองพูดใหม่อีกครั้งนะ"
+
+            print(f"🎀 ยูยุ (ภาษาไทย): {final_th}")
+
+            try:
+                await speak(final_th)
+            except Exception as e:
+                print(f"❌ Error in TTS: {e}")
+
+            try:
+                save_conversation(user_input_th, final_th)
+            except Exception as e:
+                print(f"⚠️ ไม่สามารถบันทึกบทสนทนาได้: {e}")
+
+            await asyncio.sleep(0.5)
+    except KeyboardInterrupt:
+        print("\n👋 ออกโปรแกรมเรียบร้อย ขอบคุณที่ใช้บริการค่ะ!")
 
 if __name__ == "__main__":
     asyncio.run(main())
